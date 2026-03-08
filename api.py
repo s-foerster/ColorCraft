@@ -6,10 +6,10 @@ import io
 import os
 import re
 import zipfile
-from typing import List, Optional, Tuple
+from typing import List, Literal, Optional, Tuple
 
 import cv2
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
 
 from config import Config
@@ -48,7 +48,7 @@ def parse_forced_colors(value: Optional[str]) -> List[Tuple[int, int, int]]:
 def build_config(
     colors: int,
     difficulty: int,
-    symbols: str,
+    symbols: Literal["numbers", "letters", "custom"],
     min_area: int,
     resolution: int,
     symbol_size: float,
@@ -98,10 +98,22 @@ def root() -> dict:
     }
 
 
+@app.head("/")
+def root_head() -> Response:
+    """HEAD response for platform probes."""
+    return Response(status_code=200)
+
+
 @app.get("/health")
 def health() -> dict:
     """Health endpoint for Render."""
     return {"status": "ok"}
+
+
+@app.head("/health")
+def health_head() -> Response:
+    """HEAD health response for platform probes."""
+    return Response(status_code=200)
 
 
 @app.post("/generate")
@@ -110,7 +122,7 @@ async def generate(
     output_name: Optional[str] = Form(None),
     colors: int = Form(16),
     difficulty: int = Form(5),
-    symbols: str = Form("numbers"),
+    symbols: Literal["numbers", "letters", "custom"] = Form("numbers"),
     min_area: int = Form(50),
     resolution: int = Form(1400),
     symbol_size: float = Form(0.5),
