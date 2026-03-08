@@ -48,19 +48,22 @@ pip install -r requirements.txt
 
 ## 📖 Utilisation
 
-### API FastAPI pour Render
+### API FastAPI pour Render + Supabase
 
-Cette app peut maintenant etre deployee comme API sur Render avec `FastAPI`.
-Le flux est asynchrone :
+Cette app peut maintenant etre deployee comme API sur Render avec `FastAPI` et utiliser Supabase pour la persistence des jobs et des fichiers.
+
+Le flux est asynchrone et fiable :
 
 1. `POST /generate` retourne immediatement un `job_id`
-2. le client poll `GET /jobs/{job_id}`
-3. quand le statut vaut `completed`, le client telecharge le ZIP via `GET /jobs/{job_id}/download`
+2. FastAPI cree une ligne dans Supabase
+3. le client poll `GET /jobs/{job_id}`
+4. quand le statut vaut `completed`, le client telecharge soit le ZIP, soit chaque image individuellement
 
-Le ZIP contient :
+Fichiers produits :
 
 - `<nom>_combined.png`
 - `<nom>_preview.png`
+- `<nom>_outputs.zip`
 
 Fichiers ajoutes pour le deploiement :
 
@@ -75,6 +78,50 @@ uvicorn api:app --reload
 ```
 
 Puis ouvrir `http://127.0.0.1:8000/docs`.
+
+#### Variables d'environnement necessaires
+
+Pour un backend fiable, il faut utiliser la cle service role de Supabase, pas seulement la publishable key.
+
+Variables requises sur Render :
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+Variables optionnelles :
+
+- `SUPABASE_JOBS_TABLE=jobs`
+- `SUPABASE_STORAGE_BUCKET=coloring-jobs`
+- `JOB_WORKERS=2`
+- `JOB_HEARTBEAT_SECONDS=15`
+- `JOB_STALE_SECONDS=180`
+
+Les variables frontend existantes comme `VITE_SUPABASE_URL` et `VITE_SUPABASE_PUBLISHABLE_KEY` ne suffisent pas pour ce backend.
+
+#### Schema Supabase recommande
+
+Creer une table `jobs` avec au minimum ces colonnes :
+
+```sql
+create table if not exists public.jobs (
+  id text primary key,
+  status text not null,
+  source_filename text,
+  output_name text not null,
+  input_storage_path text not null,
+  combined_storage_path text,
+  preview_storage_path text,
+  archive_storage_path text,
+  error text,
+  config jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  completed_at timestamptz,
+  last_heartbeat_at timestamptz
+);
+```
+
+Creer aussi un bucket Storage nomme `coloring-jobs` ou celui defini par `SUPABASE_STORAGE_BUCKET`.
 
 #### Creer un job
 
@@ -95,7 +142,7 @@ Reponse typique :
   "job_id": "abc123...",
   "status": "queued",
   "status_url": "http://127.0.0.1:8000/jobs/abc123...",
-  "download_url": "http://127.0.0.1:8000/jobs/abc123.../download"
+  "result": null
 }
 ```
 
@@ -111,6 +158,13 @@ Statuts possibles : `queued`, `processing`, `completed`, `failed`.
 
 ```bash
 curl -L "http://127.0.0.1:8000/jobs/abc123.../download" --output mon_coloriage_outputs.zip
+```
+
+Ou image par image :
+
+```bash
+curl -L "http://127.0.0.1:8000/jobs/abc123.../files/combined" --output mon_coloriage_combined.png
+curl -L "http://127.0.0.1:8000/jobs/abc123.../files/preview" --output mon_coloriage_preview.png
 ```
 
 Le ZIP contient les deux fichiers demandes : `_combined` et `_preview`.
